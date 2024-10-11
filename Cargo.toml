@@ -1,0 +1,17 @@
+[package]
+name = "simple-chat"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+log = "0.4"
+env_logger = "0.10"
+
+[[bin]]
+name = "chat_server"
+path = "src/server.rs"
+
+[[bin]]
+name = "chat_client"
+path = "src/client.rs"
