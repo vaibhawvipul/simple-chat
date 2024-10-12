@@ -1,0 +1,42 @@
+name: Test Chat Server and Client
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Build and Test
+        run: |
+          cargo build --verbose
+          cargo fmt -- --check
+          cargo clippy -- -D warnings
+          cargo test
+
+      - name: Start Server
+        run: |
+          cargo run --bin chat_server &
+          sleep 2 # wait for server to start
+
+      - name: Test Client
+        run: |
+          cargo run --bin chat_client 127.0.0.1 8080 testuser <<EOF
+          send Hello
+          leave
+          EOF
