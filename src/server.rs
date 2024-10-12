@@ -1,25 +1,22 @@
-use core::time;
 use log::{error, info, warn};
 use std::{collections::HashMap, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, mpsc, Mutex};
 
-// Type alias for the channel transmitter that sends messages to users
 type Tx = mpsc::UnboundedSender<String>;
 
-/// Represents a user in the chat with a unique username and a sender channel.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct User {
     username: String,
     tx: Tx,
+    pub last_messages: Vec<String>, // This will store last 2 messages for testing
 }
 
 #[tokio::main]
 #[allow(dead_code)]
 async fn main() {
-    // Initialize the logger
     env_logger::init();
 
     let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
@@ -37,7 +34,7 @@ async fn main() {
                 let broadcast_tx = broadcast_tx.clone();
 
                 tokio::spawn(async move {
-                    handle_client(socket, users, broadcast_tx).await;
+                    start_server(socket, users, broadcast_tx).await;
                 });
             }
             Err(e) => {
@@ -47,7 +44,7 @@ async fn main() {
     }
 }
 
-pub async fn handle_client(
+pub async fn start_server(
     socket: TcpStream,
     users: Arc<Mutex<HashMap<String, User>>>,
     broadcast_tx: broadcast::Sender<String>,
@@ -75,6 +72,7 @@ pub async fn handle_client(
     let user = User {
         username: username.clone(),
         tx,
+        last_messages: Vec::new(),
     };
     {
         let mut users = users.lock().await;
@@ -120,14 +118,28 @@ pub async fn handle_client(
         let msg = String::from_utf8_lossy(&buf[..n]).trim().to_string();
         if msg == "leave" {
             info!("User '{}' is leaving the chat.", username);
+            // Cleanup: Remove the user from the user list when they leave
+            {
+                let mut users = users.lock().await;
+                users.remove(&username);
+            }
             break;
         }
 
         // Broadcast the message to all connected users (except the sender)
-        std::thread::sleep(time::Duration::from_secs(5));
         let chat_msg = format!("{}: {}", username, msg);
         if let Err(e) = broadcast_tx.send(chat_msg.clone()) {
             warn!("Failed to broadcast message: {}", e);
+        }
+        // Save the last 2 messages for testing
+        {
+            let mut user = users.lock().await;
+            if let Some(user) = user.get_mut(&username) {
+                user.last_messages.push(chat_msg.clone());
+                if user.last_messages.len() > 2 {
+                    user.last_messages.drain(0..user.last_messages.len() - 2);
+                }
+            }
         }
         info!("Broadcasted message: '{}'", chat_msg);
     }
