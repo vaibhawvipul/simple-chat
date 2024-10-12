@@ -22,17 +22,13 @@ async fn main() {
     // Initialize the logger
     env_logger::init();
 
-    // Bind the server to the specified address and port
     let listener = TcpListener::bind("127.0.0.1:8080").await.unwrap();
     info!("Server started on 127.0.0.1:8080");
 
-    // Shared state of connected users, protected by a Mutex for thread-safe access
     let users = Arc::new(Mutex::new(HashMap::new()));
 
-    // Create a broadcast channel to send messages to all users
     let (broadcast_tx, _broadcast_rx) = broadcast::channel(10);
 
-    // Continuously accept new client connections
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
@@ -40,7 +36,6 @@ async fn main() {
                 let users = Arc::clone(&users);
                 let broadcast_tx = broadcast_tx.clone();
 
-                // Spawn a new asynchronous task to handle each client connection
                 tokio::spawn(async move {
                     handle_client(socket, users, broadcast_tx).await;
                 });
@@ -52,13 +47,11 @@ async fn main() {
     }
 }
 
-/// Handles individual client connections and their interactions with the chat server
 pub async fn handle_client(
     socket: TcpStream,
-    users: Arc<Mutex<HashMap<String, User>>>, // Store the User struct here
+    users: Arc<Mutex<HashMap<String, User>>>,
     broadcast_tx: broadcast::Sender<String>,
 ) {
-    // Split the socket into separate reader and writer halves for bidirectional communication
     let (mut reader, mut writer) = socket.into_split();
     let mut buf = vec![0; 1024];
 
@@ -78,7 +71,6 @@ pub async fn handle_client(
     let username = String::from_utf8_lossy(&buf[..n]).trim_end().to_string();
     info!("User '{}' is joining the chat.", username);
 
-    // Create a new user with a unique username
     let (tx, mut rx) = mpsc::unbounded_channel();
     let user = User {
         username: username.clone(),
@@ -92,7 +84,6 @@ pub async fn handle_client(
             writer.write_all(b"Username already taken\n").await.unwrap();
             return;
         }
-        // Add the user (User struct) to the shared state of connected users
         users.insert(username.clone(), user.clone());
         info!("User '{}' added to the user list.", user.username);
     }
@@ -104,7 +95,6 @@ pub async fn handle_client(
     }
     info!("Broadcasted join message: '{}'", join_msg);
 
-    // Spawn a task to handle sending messages from the broadcast channel to this client
     let write_task = {
         let username = username.clone();
         tokio::spawn(async move {
@@ -117,7 +107,6 @@ pub async fn handle_client(
         })
     };
 
-    // Handle receiving messages from the client and broadcasting them to others
     loop {
         let n = match reader.read(&mut buf).await {
             Ok(0) => break, // Client disconnected
@@ -157,6 +146,5 @@ pub async fn handle_client(
     }
     info!("Broadcasted leave message: '{}'", leave_msg);
 
-    // Await the write task to finish cleanly
     let _ = write_task.await;
 }

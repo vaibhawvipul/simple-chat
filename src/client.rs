@@ -6,10 +6,8 @@ use tokio::net::TcpStream;
 #[tokio::main]
 #[allow(dead_code)]
 async fn main() {
-    // Initialize logger
     env_logger::init();
 
-    // Collect command line arguments
     let args: Vec<String> = env::args().collect();
     if args.len() != 4 {
         eprintln!("Usage: {} <HOST> <PORT> <USERNAME>", args[0]);
@@ -49,7 +47,6 @@ pub async fn handle_client(addr: String, username: &str) {
     }
     info!("Sent username '{}' to the server", username);
 
-    // Task to handle user input (stdin)
     let write_task = tokio::spawn(async move {
         let mut stdin = io::BufReader::new(io::stdin()).lines();
         while let Ok(Some(line)) = stdin.next_line().await {
@@ -68,7 +65,6 @@ pub async fn handle_client(addr: String, username: &str) {
         writer.shutdown().await.unwrap();
     });
 
-    // Task to handle receiving messages from the server
     let read_task = tokio::spawn(async move {
         loop {
             let mut buffer = String::new();
@@ -90,7 +86,6 @@ pub async fn handle_client(addr: String, username: &str) {
         }
     });
 
-    // Wait for either task to finish
     tokio::select! {
         _ = write_task => {
             info!("Leaving chat...");
