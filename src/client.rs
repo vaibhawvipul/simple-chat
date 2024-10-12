@@ -68,7 +68,7 @@ impl Client {
     }
 
     pub async fn run(&mut self, test_mode: bool) {
-        let mut writer = self.writer.take().unwrap(); // Take ownership to use in closure
+        let mut writer = self.writer.take().unwrap();
         let mut stdin = io::BufReader::new(io::stdin()).lines();
 
         // Automatically send messages in test mode
@@ -148,5 +148,32 @@ impl Client {
         if let Some(writer) = &mut self.writer {
             writer.write_all(b"leave\n").await.unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::net::TcpListener;
+    use tokio::time::{self, Duration};
+
+    #[tokio::test]
+    async fn test_client_connection() {
+        let listener = TcpListener::bind("127.0.0.1:8083").await.unwrap();
+        tokio::spawn(async move {
+            let (_socket, _) = listener.accept().await.unwrap();
+        });
+
+        let addr = "127.0.0.1:8083".to_string();
+        let username = "test_user";
+
+        // Create the client
+        let client = Client::new(addr.clone(), username).await;
+
+        // Wait a moment for the server to process
+        time::sleep(Duration::from_millis(500)).await;
+
+        // Assert that the client is connected
+        assert!(client.writer.is_some());
     }
 }

@@ -5,12 +5,11 @@ mod tests {
     use simple_chat::server::{start_server, User};
     use std::{collections::HashMap, sync::Arc};
     use tokio::net::TcpListener;
-    use tokio::sync::{broadcast, Mutex};
+    use tokio::sync::Mutex;
 
     async fn run_server(users: Arc<Mutex<HashMap<String, User>>>) {
         println!("Starting server");
         let listener = TcpListener::bind("127.0.0.1:8081").await.unwrap();
-        let (broadcast_tx, _broadcast_rx) = broadcast::channel(10);
 
         tokio::spawn(async move {
             loop {
@@ -18,10 +17,9 @@ mod tests {
                     Ok((socket, addr)) => {
                         info!("New client connected: {}", addr);
                         let users = Arc::clone(&users);
-                        let broadcast_tx = broadcast_tx.clone();
 
                         tokio::spawn(async move {
-                            start_server(socket, users, broadcast_tx).await;
+                            start_server(socket, users).await;
                         });
                     }
                     Err(e) => {

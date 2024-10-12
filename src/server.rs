@@ -1,8 +1,9 @@
 use log::{error, info, warn};
+use rayon::prelude::*;
 use std::{collections::HashMap, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{broadcast, mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex};
 
 type Tx = mpsc::UnboundedSender<String>;
 
@@ -24,17 +25,14 @@ async fn main() {
 
     let users = Arc::new(Mutex::new(HashMap::new()));
 
-    let (broadcast_tx, _broadcast_rx) = broadcast::channel(10);
-
     loop {
         match listener.accept().await {
             Ok((socket, addr)) => {
                 info!("New client connected: {}", addr);
                 let users = Arc::clone(&users);
-                let broadcast_tx = broadcast_tx.clone();
 
                 tokio::spawn(async move {
-                    start_server(socket, users, broadcast_tx).await;
+                    start_server(socket, users).await;
                 });
             }
             Err(e) => {
@@ -44,11 +42,7 @@ async fn main() {
     }
 }
 
-pub async fn start_server(
-    socket: TcpStream,
-    users: Arc<Mutex<HashMap<String, User>>>,
-    broadcast_tx: broadcast::Sender<String>,
-) {
+pub async fn start_server(socket: TcpStream, users: Arc<Mutex<HashMap<String, User>>>) {
     let (mut reader, mut writer) = socket.into_split();
     let mut buf = vec![0; 1024];
 
@@ -88,10 +82,8 @@ pub async fn start_server(
 
     // Notify all users that a new user has joined the chat
     let join_msg = format!("{} has joined the chat!", username);
-    if let Err(e) = broadcast_tx.send(join_msg.clone()) {
-        warn!("Failed to broadcast message: {}", e);
-    }
-    info!("Broadcasted join message: '{}'", join_msg);
+    // Send the join message directly to all users
+    broadcast_to_others(&username, &join_msg, &users).await;
 
     let write_task = {
         let username = username.clone();
@@ -126,11 +118,11 @@ pub async fn start_server(
             break;
         }
 
-        // Broadcast the message to all connected users (except the sender)
+        // Create chat message
         let chat_msg = format!("{}: {}", username, msg);
-        if let Err(e) = broadcast_tx.send(chat_msg.clone()) {
-            warn!("Failed to broadcast message: {}", e);
-        }
+        // Send the message to all users except the sender
+        broadcast_to_others(&username, &chat_msg, &users).await;
+
         // Save the last 2 messages for testing
         {
             let mut user = users.lock().await;
@@ -153,10 +145,45 @@ pub async fn start_server(
 
     // Notify all users that this user has left the chat
     let leave_msg = format!("{} has left the chat.", username);
-    if let Err(e) = broadcast_tx.send(leave_msg.clone()) {
-        warn!("Failed to broadcast message: {}", e);
-    }
-    info!("Broadcasted leave message: '{}'", leave_msg);
+    broadcast_to_others(&username, &leave_msg, &users).await;
 
     let _ = write_task.await;
+}
+
+// New helper function to broadcast messages to other users using rayon parallel iterators
+async fn broadcast_to_others(
+    sender: &str,
+    message: &str,
+    users: &Arc<Mutex<HashMap<String, User>>>,
+) {
+    let users = users.lock().await;
+    users.par_iter().for_each(|(username, user)| {
+        if username != sender {
+            let _ = user.tx.send(message.to_string() + "\n");
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+    use tokio::sync::Mutex;
+
+    #[tokio::test]
+    async fn test_add_user() {
+        let users = Arc::new(Mutex::new(HashMap::new()));
+        let (tx, _rx) = mpsc::unbounded_channel();
+        let user = User {
+            username: "test_user".to_string(),
+            tx,
+            last_messages: Vec::new(),
+        };
+
+        {
+            let mut users_lock = users.lock().await;
+            users_lock.insert("test_user".to_string(), user.clone());
+            assert!(users_lock.contains_key("test_user"));
+        }
+    }
 }
