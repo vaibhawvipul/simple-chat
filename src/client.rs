@@ -4,6 +4,7 @@ use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 
 #[tokio::main]
+#[allow(dead_code)]
 async fn main() {
     // Initialize logger
     env_logger::init();
@@ -22,6 +23,10 @@ async fn main() {
     let addr = format!("{}:{}", host, port);
     info!("Attempting to connect to server at {}", addr);
 
+    handle_client(addr, username).await
+}
+
+pub async fn handle_client(addr: String, username: &str) {
     // Establish connection to the server
     let stream = match TcpStream::connect(&addr).await {
         Ok(stream) => {
@@ -38,7 +43,7 @@ async fn main() {
     let mut reader = BufReader::new(reader);
 
     // Send username to server
-    if let Err(e) = writer.write_all(username.as_bytes()).await {
+    if let Err(e) = writer.write_all(format!("{}\n", username).as_bytes()).await {
         error!("Failed to send username to the server: {:?}", e);
         return;
     }
@@ -60,6 +65,7 @@ async fn main() {
             }
             info!("Sent message to server: {}", line);
         }
+        writer.shutdown().await.unwrap();
     });
 
     // Task to handle receiving messages from the server

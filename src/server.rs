@@ -11,12 +11,13 @@ type Tx = mpsc::UnboundedSender<String>;
 /// Represents a user in the chat with a unique username and a sender channel.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
-struct User {
+pub struct User {
     username: String,
     tx: Tx,
 }
 
 #[tokio::main]
+#[allow(dead_code)]
 async fn main() {
     // Initialize the logger
     env_logger::init();
@@ -52,7 +53,7 @@ async fn main() {
 }
 
 /// Handles individual client connections and their interactions with the chat server
-async fn handle_client(
+pub async fn handle_client(
     socket: TcpStream,
     users: Arc<Mutex<HashMap<String, User>>>, // Store the User struct here
     broadcast_tx: broadcast::Sender<String>,
@@ -74,7 +75,7 @@ async fn handle_client(
         }
     };
 
-    let username = String::from_utf8_lossy(&buf[..n]).trim().to_string();
+    let username = String::from_utf8_lossy(&buf[..n]).trim_end().to_string();
     info!("User '{}' is joining the chat.", username);
 
     // Create a new user with a unique username
@@ -98,7 +99,9 @@ async fn handle_client(
 
     // Notify all users that a new user has joined the chat
     let join_msg = format!("{} has joined the chat!", username);
-    let _ = broadcast_tx.send(join_msg.clone());
+    if let Err(e) = broadcast_tx.send(join_msg.clone()) {
+        warn!("Failed to broadcast message: {}", e);
+    }
     info!("Broadcasted join message: '{}'", join_msg);
 
     // Spawn a task to handle sending messages from the broadcast channel to this client
@@ -134,7 +137,9 @@ async fn handle_client(
         // Broadcast the message to all connected users (except the sender)
         std::thread::sleep(time::Duration::from_secs(5));
         let chat_msg = format!("{}: {}", username, msg);
-        let _ = broadcast_tx.send(chat_msg.clone());
+        if let Err(e) = broadcast_tx.send(chat_msg.clone()) {
+            warn!("Failed to broadcast message: {}", e);
+        }
         info!("Broadcasted message: '{}'", chat_msg);
     }
 
@@ -147,7 +152,9 @@ async fn handle_client(
 
     // Notify all users that this user has left the chat
     let leave_msg = format!("{} has left the chat.", username);
-    let _ = broadcast_tx.send(leave_msg.clone());
+    if let Err(e) = broadcast_tx.send(leave_msg.clone()) {
+        warn!("Failed to broadcast message: {}", e);
+    }
     info!("Broadcasted leave message: '{}'", leave_msg);
 
     // Await the write task to finish cleanly
